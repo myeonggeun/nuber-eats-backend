@@ -1,10 +1,17 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule, RequestMethod } from '@nestjs/common';
 import * as Joi from 'joi';
 import { ConfigModule } from '@nestjs/config';
 import { GraphQLModule } from '@nestjs/graphql';
 import { TypeOrmModule } from '@nestjs/typeorm'
-import { RestaurantsModule } from './restaurants/restaurants.module';
-import { Restaurant } from './restaurants/entities/restaurant.entity';
+import { CommonModule } from './common/common.module';
+import { UsersModule } from './users/users.module';
+import { User } from './users/entities/user.entity';
+import { JwtModule } from './jwt/jwt.module';
+import { JwtMiddleware } from './jwt/jwt.middleware';
+import { AuthModule } from './auth/auth.module';
+import { Verification } from './users/entities/verification.entity';
+import { MailModule } from './mail/mail.module';
+
 
 
 @Module({
@@ -20,10 +27,15 @@ import { Restaurant } from './restaurants/entities/restaurant.entity';
       DB_USERNAME: Joi.string().required(),
       DB_PASSWORD: Joi.string().required(),
       DB_DATABASE: Joi.string().required(),
+      PRIVATE_KEY: Joi.string().required(),
+      MAILGUN_API_KEY: Joi.string().required(),
+      MAILGUN_DOMAIN_NAME: Joi.string().required(),
+      MAILGUN_FROM_EMAIL: Joi.string().required(),
     })
   }),
   GraphQLModule.forRoot({
     autoSchemaFile: true,
+    context: ({req}) => ({user: req['user']}), 
   }), 
   TypeOrmModule.forRoot({
     type: 'postgres',
@@ -34,11 +46,24 @@ import { Restaurant } from './restaurants/entities/restaurant.entity';
     database: process.env.DB_DATABASE,
     synchronize: process.env.NODE_ENV !== 'prod',
     logging: true,
-    entities: [Restaurant]
+    entities: [User, Verification]
   }),
-  RestaurantsModule,
+  UsersModule,
+  JwtModule.forRoot({
+    privateKey: process.env.PRIVATE_KEY
+  }),
+  AuthModule,
+  MailModule.forRoot({
+    apiKey: process.env.MAILGUN_API_KEY,
+    domain: process.env.MAILGUN_DOMAIN_NAME,
+    fromEmail: process.env.MAILGUN_FROM_EMAIL,
+  }),
   ],
   controllers: [],
   providers: [],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(JwtMiddleware).forRoutes({ path: '/graphql', method: RequestMethod.POST})
+  }
+}
